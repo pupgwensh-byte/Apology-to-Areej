@@ -299,6 +299,10 @@
       html{scroll-behavior:auto}
       *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
     }
+
+    .audio-status{margin-top:12px;min-height:24px;font-size:.92rem;color:#6d5560;text-align:center}
+    .audio-status.error{color:#a51d42;font-weight:700}
+    .audio-status.ok{color:#26734d;font-weight:700}
   </style>
 </head>
 <body class="locked">
@@ -453,6 +457,7 @@
                 <div class="time-row"><span id="currentTime">0:00</span><span id="duration">3:54</span></div>
               </div>
             </div>
+            <div class="audio-status" id="audioStatus" aria-live="polite">دوسي تشغيل لو الأغنية مبدأتش تلقائيًا 🎵</div>
           </div>
         </div>
       </div>
@@ -493,8 +498,9 @@
   <footer>معمول مخصوص لـ <strong>أريچ — فراولة</strong>… لأن بعض الناس تستاهل محاولة صادقة 🍓</footer>
 
   <button class="floating-music pulse" id="floatingMusic" type="button" aria-label="تشغيل أو إيقاف الأغنية">♪</button>
-  <audio id="audio" preload="metadata" loop>
-    <source src="assets/ana-baatereflek.mp3" type="audio/mpeg">
+  <audio id="audio" preload="auto" loop playsinline>
+    <source src="./ana-baatereflek.mp3" type="audio/mpeg">
+    متصفحك لا يدعم تشغيل الصوت.
   </audio>
 
   <script>
@@ -504,6 +510,7 @@
       const $ = (selector, parent = document) => parent.querySelector(selector);
       const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
       const audio = $("#audio");
+      const audioStatus = $("#audioStatus");
       const player = $("#player");
       const playButtons = [$("#navMusic"), $("#heroMusic"), $("#playMain"), $("#floatingMusic")].filter(Boolean);
       const seek = $("#seek");
@@ -530,19 +537,38 @@
         if (heroIcon) heroIcon.textContent = playing ? "❚❚" : "♪";
       }
 
-      async function toggleMusic() {
+      function setAudioStatus(message, type = "") {
+        if (!audioStatus) return;
+        audioStatus.textContent = message;
+        audioStatus.className = `audio-status ${type}`.trim();
+      }
+
+      async function playAudio() {
         try {
-          if (audio.paused) {
-            audio.volume = Math.max(audio.volume, 0.32);
-            await audio.play();
-            userStarted = true;
-          } else {
-            audio.pause();
-          }
+          audio.muted = false;
+          audio.volume = 1;
+          if (audio.readyState === 0) audio.load();
+          await audio.play();
+          userStarted = true;
+          setAudioStatus("الأغنية شغالة دلوقتي 🤍", "ok");
+          return true;
         } catch (error) {
-          console.warn("Audio playback was blocked:", error);
+          console.warn("Audio playback failed:", error);
+          setAudioStatus("التشغيل التلقائي اتمنع — دوسي على زر ▶ مرة واحدة", "error");
+          return false;
+        } finally {
+          syncPlayerUI();
         }
-        syncPlayerUI();
+      }
+
+      async function toggleMusic() {
+        if (audio.paused) {
+          await playAudio();
+        } else {
+          audio.pause();
+          setAudioStatus("الأغنية متوقفة مؤقتًا");
+          syncPlayerUI();
+        }
       }
 
       playButtons.forEach(button => button.addEventListener("click", toggleMusic));
@@ -550,6 +576,12 @@
       audio.addEventListener("pause", syncPlayerUI);
       audio.addEventListener("loadedmetadata", () => {
         durationLabel.textContent = formatTime(audio.duration);
+      });
+      audio.addEventListener("canplay", () => {
+        if (audio.paused) setAudioStatus("الأغنية جاهزة — دوسي ▶ للتشغيل 🎵");
+      });
+      audio.addEventListener("error", () => {
+        setAudioStatus("تعذر تحميل الأغنية. اتأكدي إن ملف ana-baatereflek.mp3 مرفوع جنب index.html", "error");
       });
       audio.addEventListener("timeupdate", () => {
         const progress = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
@@ -561,25 +593,12 @@
         if (audio.duration) audio.currentTime = (Number(seek.value) / 100) * audio.duration;
       });
 
-      // Intro: the click satisfies browser autoplay rules.
+      // Opening click counts as a direct user gesture on mobile browsers.
       $("#startBtn").addEventListener("click", async () => {
         const intro = $("#intro");
         intro.classList.add("hidden");
         document.body.classList.remove("locked");
-        try {
-          audio.volume = 0;
-          await audio.play();
-          userStarted = true;
-          let volume = 0;
-          const fade = setInterval(() => {
-            volume = Math.min(volume + 0.04, 0.34);
-            audio.volume = volume;
-            if (volume >= 0.34) clearInterval(fade);
-          }, 90);
-        } catch (error) {
-          console.warn("Autoplay was not available:", error);
-        }
-        syncPlayerUI();
+        await playAudio();
       });
 
       // Reveal on scroll.
